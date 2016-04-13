@@ -1,6 +1,6 @@
-# Summary of CVE-2016-3959
+# Summary of Go's crypto/dsa Vulnerability (CVE-2016-3959)
 
-## Proof of Concept Denial of Service Attack Against a Go SSH Server
+## And a Proof of Concept Denial of Service Attack Against a Go SSH Server
 
 Alex Mullins
 
@@ -18,7 +18,7 @@ The first mention of this vulnerability appeared in a post on the Open Source Se
 
 > -- <cite>Jason Buberel</cite>
 
-In summary, if this vulnerability were exploited, it could lead to an infinite loop in the underlying BigNum library code. This will eat up computer resources in terms of CPU and memory and could eventually cause the program or the system itself to become unresponsive.
+In summary, if this vulnerability were exploited, it could lead to an infinite loop in the underlying BigNum library code. This will eat up system resources in terms of CPU and memory and could eventually cause the program or the system itself to become unresponsive.
 
 The above statement says that SSH along with HTTPS client authentication are affected, but after looking at Go's crypto/tls and net/http packages that appears to be incorrect. HTTPS client authentication can use either RSA or ECDSA signature schemes, but not DSA. See below. If I am wrong about this please let me know.
 
@@ -110,7 +110,7 @@ func Verify(pub *PublicKey, hash []byte, r, s *big.Int) bool {
 }
 ```
 
-To sum up the commit message and the code fix above: in Go 1.6 and previous versions there is a bug in the Verify function of the crypto/dsa package. If someone calls Verify with the public key parameter P set to 0 then that will cause an infinite loop in one of the statements further down in the function.
+To sum up the commit message and the code fix above: in Go 1.6 and previous versions there is a bug in the Verify function of the crypto/dsa package. If someone calls Verify with the public key parameter P set to 0 then it will cause an infinite loop in one of the statements further down in the Verify function.
 
 A brief detour to explain DSA. DSA is a digital signature algorithm that uses asymmetric cryptography to sign a message which can later be used to guarantee that the message was in fact sent by the sender/private key holder. A simple example, Alice sends a message to Bob telling him where and when they should both meet for lunch. Bob though, wants to be sure that Alice is really the one that sent him the message and not someone else. For this to work Alice will sign the message with her private key and Bob can verify Alice's signature with her public key that Bob knows. No one other than the private key holder can sign a message that can then be verified by the corresponding public key (that's the idea at least).
 
@@ -319,7 +319,7 @@ One thing to notice is that `-p` flag which controls whether the server creates 
 
 The client code is a little more involved. It needs modifications to the Go SSH library code to allow for sending a malformed DSA key. The SSH library has been vendored in to the client package. Note that the server code is all 100% unchanged and imports the regular golang.org/x/crypto/ssh package from the workspace.
 
-The client works in two separate modes controlled by a command line flag called `-attack`. When the client is started normally, it will make a regular SSH connection to the server and start reading the server's time every second. But when the `-attack` flag is present, the client will send an authentication request to the server with a malformed DSA public key. Relevant bits of code:
+The client works in two separate modes controlled by a command line flag called `-attack`. When the client is started normally, it will make a regular SSH connection to the server and start reading the server's time every few seconds. But when the `-attack` flag is present, the client will send an authentication request to the server with a malformed DSA public key. Relevant bits of code:
 
 ```go
 func init() {
@@ -405,7 +405,7 @@ Now it's time to start an attacking client:
 $ ./client -key=./data/id_dsa -attack
 ```
 
-Notice it just hangs without 'connected' message. The server also did not log creating an SSH connection:
+Notice it just hangs without a 'connected' message. The server also did not log creating an SSH connection:
 
 ```bash
 $ ./server -key=./data/id_rsa
@@ -423,7 +423,7 @@ $ ./client -key=./data/id_dsa
 
 ##### Parallel
 
-If the server was started with the `-p` flag, then it can still accept regular clients because the attacker's SSH connections are being tied up in a background goroutines. This doesn't lead to an immediate DOS, but will continually eat up the computer's CPU and memory resources leading to a slow death.
+If the server was started with the `-p` flag, then it can still accept regular clients because the attacker's SSH connections are being tied up in background goroutines. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.
 
 Let's start up the server again, but this time with the `-p` flag:
 
@@ -447,7 +447,7 @@ Wed Apr 13 07:42:09 CDT 2016
 Wed Apr 13 07:42:12 CDT 2016
 ```
 
-Hey it connects! But all an attacker needs to do is start a few more connections and the server's CPU will spike to 100%+ and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty.
+Hey it connects! But all an attacker would need to do is start a few more attacking client connections and the server's CPU will spike to 100%+ and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty.
 
 ### Conclusion
 
