@@ -1,6 +1,4 @@
-# Summary of Go's crypto/dsa Vulnerability (CVE-2016-3959)
-
-## And a Proof of Concept Denial of Service Attack Against a Go SSH Server
+# A Summary of Go's crypto/dsa Vulnerability (CVE-2016-3959)
 
 Alex Mullins
 
@@ -8,7 +6,7 @@ April 9, 2016
 
 --------------------------------------------------------------------------------
 
-### Introduction
+## Introduction
 
 Recently, there was a bug discovered in the Digital Signature Algorithm (DSA) crypto library for the Go programming language. In this article, we'll go over the details of the bug and how an attacker could leverage it to initiate a denial of service attack against a standard Go SSH server that uses the underlying DSA library to authenticate clients.
 
@@ -52,7 +50,7 @@ This will create a new folder called sample and clone the git repository and its
 
 The next section will cover the details of the vulnerability.
 
-### The Flaw
+## The Flaw
 
 So what exactly is wrong? To answer that, one must go back to the original announcement on the oss-sec mailing list. There isn't much information there other than a general explanation of the problem and a link to the code fix at <https://golang.org/cl/21533>. The commit message for that change contains the following:
 
@@ -248,7 +246,7 @@ $ go test -fail
 
 Observe that this last test call will hang.
 
-### Exploitation
+## Exploitation
 
 How can someone exploit this? If an attacker can somehow get a server to accept and use a malformed DSA key to Verify a signature, he/she can influence the server to become stuck crunching away at a large exponentiation problem thereby causing a denial of service (DOS). Since SSH uses DSA as a signature scheme in its client authentication protocol, this seems like a perfect server candidate to try this exploit out against. Let's imagine up a scenario in which this could happen.
 
@@ -256,7 +254,7 @@ A small Git hosting provider allows its users to authenticate with SSH keys to i
 
 Let's test out that scenario.
 
-#### The Server
+### The Server
 
 The server is a simple SSH server that accepts session requests and prints the current time to the connection. Thanks to github.com/jpillora for providing this sample server code at <https://gist.github.com/jpillora/b480fde82bff51a06238>. There were minor adjustments made to the code to allow Public Key Authentication instead of password callbacks.
 
@@ -269,7 +267,7 @@ config := &ssh.ServerConfig{
 }
 ```
 
-This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. Other than that, the server looks like very normal Go server that starts listening on a port and accepts connections coming in.
+This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. Other than that, the server looks like a very normal Go server that starts listening on a port and accepts connections coming in.
 
 ```go
 // Once a ServerConfig has been configured, connections can be accepted.
@@ -315,7 +313,7 @@ func makeSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 
 One thing to notice is that `-p` flag which controls whether the server creates SSH connections on the main goroutine vs a background goroutine. This will be important when we get to the attack section in a bit.
 
-#### The Client
+### The Client
 
 The client code is a little more involved. It needs modifications to the Go SSH library code to allow for sending a malformed DSA key. The SSH library has been vendored in to the client package. Note that the server code is all 100% unchanged and imports the regular golang.org/x/crypto/ssh package from the workspace.
 
@@ -333,7 +331,7 @@ func init() {
 }
 ```
 
-Notice a new var `ssh.Attack` was created in the vendored SSH package and is set to true when the `-attack` flag is present. `ssh.Attack` changes the DSA public key marshalling code to replace the P parameter to 0. You can find both of these changes in attack.go and keys.go.
+Notice a new var `ssh.Attack` was created in the vendored SSH package and is set to true when the `-attack` flag is present. `ssh.Attack` changes the SSH package's DSA public key marshalling code to replace the P parameter to 0. You can find both of these changes in attack.go and keys.go files in the vendored SSH package.
 
 ```go
 // attack.go
@@ -364,15 +362,15 @@ func (k *dsaPublicKey) Marshal() []byte {
 }
 ```
 
-#### The Attack
+### The Attack
 
 The attack has different impact depending on whether the server is started with the `-p` flag.
 
 To build the server, cd into the server directory and run: `go build -o server .` Do the same for the client: `go build -o client .` There are test RSA and DSA keys in the server and client `data` directories. If you want to create new ones, use `ssh-keygen`.
 
-##### Serial Server
+#### Serial Server
 
-If the server was started without the `-p` flag, then one attacking client can completely freeze the server and no more connections can be accepted.
+If the server was started without the `-p` flag, then one attacking client can completely freeze the server and no more connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication.
 
 Start the server normally:
 
@@ -399,13 +397,13 @@ $ ./server -key=./data/id_rsa
 2016/04/13 07:31:31 New SSH connection from 127.0.0.1:63516 (SSH-2.0-Go)
 ```
 
-Now it's time to start an attacking client:
+Now it's time to start an attacking client in another terminal:
 
 ```bash
 $ ./client -key=./data/id_dsa -attack
 ```
 
-Notice it just hangs without a 'connected' message. The server also did not log creating an SSH connection:
+Notice the client just hangs without a 'connected' message and no time read outs. The server also did not log creating an SSH connection, but it did accept the TCP connection:
 
 ```bash
 $ ./server -key=./data/id_rsa
@@ -415,13 +413,13 @@ $ ./server -key=./data/id_rsa
 2016/04/13 07:33:36 Accepted an incoming TCP connection from 127.0.0.1:63521
 ```
 
-A normal client also isn't able to connect:
+A new, normal client also gets stuck trying to connect:
 
 ```bash
 $ ./client -key=./data/id_dsa
 ```
 
-##### Parallel
+#### Parallel
 
 If the server was started with the `-p` flag, then it can still accept regular clients because the attacker's SSH connections are being tied up in background goroutines. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.
 
@@ -449,7 +447,7 @@ Wed Apr 13 07:42:12 CDT 2016
 
 Hey it connects! But all an attacker would need to do is start a few more attacking client connections and the server's CPU will spike to 100%+ and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty.
 
-### Conclusion
+## Conclusion
 
 In conclusion, this vulnerability can be exploited to cause denial of service, but the impact of it isn't terribly bad. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10 - 6.3/10 based on if the server used the `-p` flag. There isn't any confidentiality or integrity impacts, just a partial/complete availability impact.
 
