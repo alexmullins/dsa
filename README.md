@@ -44,7 +44,7 @@ To follow along with the code samples in this article you'll need Go version 1.6
 $ go get github.com/alexmullins/dsa
 ```
 
-This will create a new folder called `sample` and clone the git repository and its contents into it.
+This will clone the repository into your Go workspace.
 
 The next section will cover the details of the vulnerability.
 
