@@ -8,7 +8,7 @@ April 9, 2016
 
 ## Introduction
 
-Recently, there was a bug discovered in the Digital Signature Algorithm (DSA) crypto library for the Go programming language. In this article, we'll go over the details of the bug and how an attacker could leverage it to initiate a denial of service attack against a standard Go SSH server that uses the underlying DSA library to authenticate clients.
+Recently, there was a bug discovered in the Digital Signature Algorithm (DSA) crypto library for the Go programming language. In this article we'll go over the details of the bug and how an attacker could leverage it to initiate a denial of service attack against a standard Go SSH server that uses the underlying DSA library to authenticate clients.
 
 The first mention of this vulnerability appeared in a post on the Open Source Security (oss-sec) Mailing List at <http://seclists.org/oss-sec/2016/q2/11>.
 
@@ -46,7 +46,7 @@ $ cd sample
 $ git clone https://github.com/alexmullins/dsa
 ```
 
-This will create a new folder called sample and clone the git repository and its contents into it.
+This will create a new folder called `sample` and clone the git repository and its contents into it.
 
 The next section will cover the details of the vulnerability.
 
@@ -151,7 +151,7 @@ This is the comment for the Exp() method:
 func (z *Int) Exp(x, y, m *Int) *Int {
 ```
 
-From the above, you can see the comment specifies that when m == 0 that it will exponentiate without modular reduction. When you take a large number and exponentiate it with another large number then the result will also be REALLY BIG number. I'm not too familiar with how math/big works, but I think that is what is going on here. Exp() is crunching away at this exponentiation that will take a very, very long time to complete.
+From the above, you can see the comment specifies that when m == 0 that it will exponentiate without modular reduction. When you take a large number and exponentiate it with another large number then the result will also be a REALLY BIG number. I'm not too familiar with how math/big works, but I think that is what is going on here. Exp() is crunching away at this exponentiation that will take a very, very long time to complete.
 
 Here are some sample numbers being used in a dsa.Verify() call to Exp() from the testing below:  
 
@@ -445,7 +445,7 @@ Wed Apr 13 07:42:09 CDT 2016
 Wed Apr 13 07:42:12 CDT 2016
 ```
 
-Hey it connects! But all an attacker would need to do is start a few more attacking client connections and the server's CPU will spike to 100%+ and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty.
+Hey it connects! But all an attacker would need to do is start a few more attacking client connections and the server's CPU will spike and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty.
 
 ## Conclusion
 
