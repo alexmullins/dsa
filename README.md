@@ -41,9 +41,7 @@ Not long after that post appeared on the oss-sec mailing list, a CVE number was 
 To follow along with the code samples in this article you'll need Go version 1.6 installed. Follow the instruction at <https://golang.org/doc/install>. If you want to download this document and the code samples you'll need Git installed too. Follow the instructions at <https://git-scm.com/book/en/v2/Getting-Started-Installing-Git>. To clone the repository issue the following command in a terminal:
 
 ```bash
-$ mkdir sample
-$ cd sample
-$ git clone https://github.com/alexmullins/dsa
+$ go get github.com/alexmullins/dsa
 ```
 
 This will create a new folder called `sample` and clone the git repository and its contents into it.
