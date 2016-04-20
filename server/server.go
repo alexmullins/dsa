@@ -89,9 +89,7 @@ func main() {
 		}
 		log.Printf("Accepted an incoming TCP connection from %s", tcpConn.RemoteAddr())
 		if *p {
-			go func() {
-				makeSSHConn(tcpConn, config)
-			}()
+			go makeSSHConn(tcpConn, config)
 		} else {
 			makeSSHConn(tcpConn, config)
 		}

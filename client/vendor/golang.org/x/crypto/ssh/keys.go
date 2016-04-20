@@ -371,8 +371,7 @@ func parseDSA(in []byte) (out PublicKey, rest []byte, err error) {
 func (k *dsaPublicKey) Marshal() []byte {
 	x := k.P
 	if Attack {
-		b := make([]byte, len(k.P.Bytes()))
-		x = new(big.Int).SetBytes(b)
+		x = big.NewInt(0)
 	}
 	w := struct {
 		Name       string
