@@ -256,7 +256,7 @@ Let's test out that scenario.
 
 ### The Server
 
-The server is a simple SSH server that accepts session requests and prints the current time to the connection. Thanks to github.com/jpillora for providing this sample server code at <https://gist.github.com/jpillora/b480fde82bff51a06238>. There were minor adjustments made to the code to allow Public Key Authentication instead of password callbacks.
+The server is a simple SSH server that accepts session requests and prints the current time to the connection. Thanks to github.com/jpillora for providing this sample server code at <https://gist.github.com/jpillora/b480fde82bff51a06238>. There were a few adjustments made to the code to allow Public Key Authentication instead of password callbacks.
 
 ```go
 config := &ssh.ServerConfig{
@@ -267,7 +267,7 @@ config := &ssh.ServerConfig{
 }
 ```
 
-This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. Other than that, the server looks like a very normal Go server that starts listening on a port and accepts connections coming in.
+This will accept all public key authentication requests. Imagine a real service querying out to a database to determine whether a particular user has this public key registered under his/her account. The server looks like a very normal Go server that starts listening on a port and accepts connections coming in.
 
 ```go
 // Once a ServerConfig has been configured, connections can be accepted.
@@ -309,7 +309,7 @@ func makeSSHConn(conn net.Conn, config *ssh.ServerConfig) {
 }
 ```
 
-One thing to notice is that `if *p` check. That corresponds to the `-p` parallel flag and controls whether the server creates SSH connections on the main goroutine vs a background goroutine. This will be important when we get to the attack section in a bit.
+One thing to notice is that `if *p` check. That corresponds to the `-p` flag and controls whether the server performs the SSH handshake on the main goroutine vs a background goroutine. Many online examples use the former. The `-p` flag will show the difference a blocking operation can have on the performance of a networked server in the attack section later.
 
 ### The Client
 
@@ -365,9 +365,9 @@ The attack has different impact depending on whether the server is started with 
 
 To build the server, cd into the server directory and run: `go build -o server .` Do the same for the client: `go build -o client .` There are test RSA and DSA keys in the server and client `data` directories. If you want to create new ones, use `ssh-keygen`.
 
-#### Serial Server
+#### Server - Main Goroutine
 
-If the server was started without the `-p` flag, then one attacking client can completely freeze the server and no more connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication.
+If the server was started without the `-p` flag, then one attacking client can completely freeze the server and no more new connections can be accepted. This is because the call to ssh.NewServerConn() is run on the main goroutine and is stuck in the call to dsa.Verify() for client authentication blocking further listener.Accept() calls. When writing networked servers, it is important to keep the accept loop responsive and push any blocking operations off into a background goroutine.
 
 Start the server normally with:
 
@@ -416,9 +416,11 @@ Try connecting another normal client; it is now prevented from connecting too:
 $ ./client -key=./data/id_dsa
 ```
 
-#### Parallel
+The original client is still able to receive responses from the server though.
 
-If the server was started with the `-p` flag, then it can still accept regular clients because the attacker's SSH connections are being tied up in background goroutines. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.
+#### Server - Background Goroutine
+
+If the server was started with the `-p` flag, then it can still accept regular client connections because the attacker's SSH connections are being tied up in background goroutines instead of blocking the accept loop on the main goroutine. This doesn't lead to an immediate DOS, but will continually eat up the server's CPU and memory resources leading to a slow death.
 
 Let's start up the server again, but this time with the `-p` flag:
 
@@ -446,7 +448,7 @@ Hey it connects! But all an attacker would need to do is start a few more malici
 
 ## Conclusion
 
-In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10 - 6.3/10 based on if the server used the `-p` flag. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.
+In conclusion, this vulnerability can be exploited to cause denial of service. Using the scenario above, the CVE score calculator <https://nvd.nist.gov/CVSS/v2-calculator> gave a score of 3.5/10. There aren't any confidentiality or integrity impacts, just a partial/complete availability impact.
 
 Looking at godoc.org there are currently 164 packages that import `crypto/dsa`, <https://godoc.org/crypto/dsa?importers>. It is recommended to upgrade to the security release that is at <https://golang.org/dl/>.
 
