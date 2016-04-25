@@ -12,8 +12,7 @@
   - **Jeep Hacked** - <http://www.wired.com/2015/07/hackers-remotely-kill-jeep-highway/>
   - **Internal Revenue Service (IRS)** - <http://fortune.com/2015/08/21/irs-sued-data-breach/>
   - **Office of Personnel Management** - <https://en.wikipedia.org/wiki/Office_of_Personnel_Management_data_breach>
-  - **Apple vs. FBI iPhone Case** - <https://en.wikipedia.org/wiki/FBI%E2%80%93Apple_encryption_dispute><br>
-    <br>
+  - **Apple vs. FBI iPhone Case** - <https://en.wikipedia.org/wiki/FBI%E2%80%93Apple_encryption_dispute><br><br>
 
 - **Live attacks** - <http://map.norsecorp.com/#/>
 
@@ -33,16 +32,14 @@
 
 # 1\. A Summary of Vulnerability Analysis (CVE-2016-3959)
 
-- **Summary** - There is a bug in the signature verification method for the Digital Signature Algorithm (DSA) in Go's standard library crypto/dsa package. If exploited, an attacker can cause a denial of service (DOS) against a target server. Alice and Bob example.<br>
-  <br>
-  If a DSA public key's P parameter is set to 0 an attacker can cause the verification to hang in an infinite loop. Will lead to memory and CPU to continually grow and the system will become unresponsive.<br>
-  <br>
+- **Summary** - There is a bug in the signature verification method for the Digital Signature Algorithm (DSA) in Go's standard library crypto/dsa package. If exploited, an attacker can cause a denial of service (DOS) against a target server. Alice and Bob example.<br><br>
+  If a DSA public key's P parameter is set to 0 an attacker can cause the verification to hang in an infinite loop. Will lead to memory and CPU to continually grow and the system will become unresponsive.<br><br>
   Supposed to calculate: `b = x ^ y mod z`, but instead calculate `b = x ^ y` when P = 0\. When x is a 300 digit number and y is a 50 digit number the resulting number b will contain more digits than there are atoms in the universe.
 
   > Go has an infinite loop in several big integer routines that makes Go programs vulnerable to remote denial of service attacks. Programs using HTTPS client authentication or the Go ssh server libraries are both exposed to this vulnerability. This is being addressed in the following CL: <https://golang.org/cl/21533>
 
   > --
 
-  > <cite>Jason Buberel</cite>
+  > <cite>Jason Buberel - Product Manager, Go Language, Tools &amp; Ecosystem at Google</cite>
 
 - **Video** - <https://youtu.be/FXie8T5P6PI>
